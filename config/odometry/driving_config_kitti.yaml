@@ -4,21 +4,21 @@ progress_bar: true # Whether to display progress with a progress bar
 debug_information: false # Whether to display debug information (incompatible with progress_bar)
 output_results: true # Whether to output results to disk
 exit_early: true # Whether to exit early upon a detected failure
-output_dir: .outputs
+output_dir: /media/jhuai/OneTouchBlss/jhuai/results/kitti/ct-icp
 save_undistort_frames: false
 
 # ---- DATASET OPTIONS ----
 dataset_options:
-  - dataset: KITTI_raw
-    root_path: .kitti_raw
-    use_all_datasets: false
+  - dataset: KITTI
+    root_path: /media/jhuai/OneTouchBlss/jhuai/data/KITTI
+    use_all_datasets: true
     sequence_options:
       - sequence_name: 00
 
 # ---- ODOMETRY OPTIONS ----
 odometry_options:
   # -- Output Options
-  debug_print: true
+  debug_print: false
 
   # -- Main Options
   motion_compensation: CONTINUOUS # The profile of the motion compensation (NONE, CONSTANT_VELOCITY, ITERATIVE, CONTINUOUS)
@@ -44,7 +44,7 @@ odometry_options:
     resolutions:
       - resolution: 0.8
         max_num_points: 30
-        min_distance_between_points: 0.1
+        min_distance_between_points: 0.08
 
   # ---- CT_ICP OPTIONS ----
   ct_icp_options:
@@ -73,8 +73,8 @@ odometry_options:
     threshold_voxel_occupancy: 1
 
     # -- Stop Criterion Params
-    threshold_orientation_norm: 0.1
-    threshold_translation_norm: 0.01
+    threshold_orientation_norm: 0.0001
+    threshold_translation_norm: 0.001
 
     # -- CT Trajectory constraint (if parametrizaton == CONTINUOUS_TIME)
     point_to_plane_with_distortion: true

@@ -55,8 +55,8 @@ Superbuild**](https://gitlab.kitware.com/keu-computervision/MappingResearchKEU/S
 
 ```bash
 mkdir .cmake-build-superbuild && cd .cmake-build-superbuild     #< Creates the cmake folder
-cmake ../superbuild                                             #< (1) Configure step 
-cmake --build . --config Release                                #< Build step (Downloads and install the dependencies), add -DWITH_VIZ3D=ON to install with the GUI
+cmake ../superbuild -DWITH_ROS=ON                                            #< (1) Configure step 
+cmake --build . --config Release -DWITH_ROS=ON                               #< Build step (Downloads and install the dependencies), add -DWITH_VIZ3D=ON to install with the GUI
 ```
 > /!\ If you want to build the visualization do not forget to add `-DWITH_VIZ3D=ON`
 
@@ -67,7 +67,7 @@ cmake --build . --config Release                                #< Build step (D
 ### Step 2: Build and install CT-ICP library
 
 ```bash
-# Inside the main directory
+# Inside the ct_icp directory
 mkdir cmake-build-release && cd  cmake-build-release                  #< Create the build directory
 cmake .. -DCMAKE_BUILD_TYPE=Release                                   #< (2) Configure with the desired options (specify arguments with -D<arg_name>=<arg_value>), add -DWITH_VIZ3D=ON to install with the GUI
 cmake --build . --target install --config Release --parallel 12       #< Build and Install the project

@@ -196,6 +196,8 @@ namespace slam {
     // Writes a buffer collection to a file
     void WritePLY(std::ostream &output_file, const BufferCollection &collection, const PLYSchemaMapper &schema);
 
+    void WritePLY2(const std::string &output_file, const std::vector<slam::WPoint3D> &points, const std::string& element = "undistort_point");
+
     // Reads a point cloud from a file
     PointCloudPtr ReadPointCloudFromPLY(std::istream &input_file, const PLYSchemaMapper &schema);
 
@@ -220,6 +222,12 @@ namespace slam {
 
     // Writes the vector of poses as a binary PLY file on disk
     void SavePosesAsPLY(const std::string &file_path,
+                        const std::vector<Pose> &poses);
+
+    void SavePosesAsTum(std::ostream &output_file,
+                        const std::vector<Pose> &poses);
+
+    void SavePosesAsTum(const std::string &file_path,
                         const std::vector<Pose> &poses);
 
     // Reads a vector of poses from a PLY binary file stream

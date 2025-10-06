@@ -36,11 +36,14 @@ namespace slam {
         EIGEN_MAKE_ALIGNED_OPERATOR_NEW
         Point3D raw_point;
         Eigen::Vector3d world_point;
+        Eigen::Vector3d undistort_point; // undistort lidar point wrt the lidar frame end pose
         frame_id_t index_frame = -1;
 
         WPoint3D() = default;
 
         REF_GETTER(WorldPoint, world_point);
+
+        REF_GETTER(UndistortPoint, undistort_point);
 
         REF_GETTER(RawPoint, raw_point.point);
 
@@ -573,6 +576,7 @@ namespace slam {
                 .AddElement("xyzt", offsetof(WPoint3D, raw_point.point))
                 .AddElement("raw_point", offsetof(WPoint3D, raw_point.point))
                 .AddElement("world_point", offsetof(WPoint3D, world_point))
+                .AddElement("undistort_point", offsetof(WPoint3D, undistort_point))
                 .AddElement("properties", 0)
                 .AddScalarProperty<double>("xyzt", "xyz", 0, 3)
                 .AddScalarProperty<double>("xyzt", "t", offsetof(Point3D, timestamp))
@@ -582,9 +586,13 @@ namespace slam {
                 .AddScalarProperty<double>("world_point", "x", 0)
                 .AddScalarProperty<double>("world_point", "y", sizeof(double))
                 .AddScalarProperty<double>("world_point", "z", 2 * sizeof(double))
+                .AddScalarProperty<double>("undistort_point", "x", 0)
+                .AddScalarProperty<double>("undistort_point", "y", sizeof(double))
+                .AddScalarProperty<double>("undistort_point", "z", 2 * sizeof(double))
                 .AddScalarProperty<double>("properties", "raw_xyz", offsetof(WPoint3D, raw_point.point), 3)
                 .AddScalarProperty<double>("properties", "t", offsetof(WPoint3D, raw_point.timestamp), 1)
                 .AddScalarProperty<double>("properties", "world_xyz", offsetof(WPoint3D, world_point), 3)
+                .AddScalarProperty<double>("properties", "undistort_xyz", offsetof(WPoint3D, undistort_point), 3)
                 .AddScalarProperty<frame_id_t>("properties", "index_frame", offsetof(WPoint3D, index_frame), 1)
                 .Build();
     }

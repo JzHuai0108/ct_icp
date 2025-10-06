@@ -63,6 +63,20 @@ namespace ct_icp {
     } // namespace
 #endif // CT_ICP_WITH_VIZ == 1
 
+    inline std::string basenamewithoutext(const std::string& file_path) {
+        namespace fs = std::filesystem;
+        fs::path p(file_path);
+
+        // Get just the filename part (no directories)
+        fs::path fname = p.filename();
+
+        // Strip all extensions (so ".tar.gz" -> "", leaving "image")
+        while (fname.has_extension()) {
+            fname = fname.stem();
+        }
+        return fname.string();
+    }
+
     /* -------------------------------------------------------------------------------------------------------------- */
     bool OdometryRunner::Run() {
 
@@ -112,7 +126,8 @@ namespace ct_icp {
                 auto now = std::chrono::system_clock::now();
                 auto in_time_t = std::chrono::system_clock::to_time_t(now);
                 std::stringstream ss;
-                ss << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d_%X");
+                // Use %H-%M-%S instead of %X (avoid ':' characters)
+                ss << std::put_time(std::localtime(&in_time_t), "%Y-%m-%d_%H-%M-%S");
                 *output_path = *output_path / ss.str();
             }
             fs::create_directories(*output_path);
@@ -208,6 +223,25 @@ namespace ct_icp {
                                              seq_name,
                                              *output_path,
                                              ground_truth, options.use_outdoor_evaluation, true);
+                }
+
+                if (options.save_undistort_frames) {
+                    slam::Pose pose;
+                    if (options.save_mid_frame)
+                        pose = summary.frame.begin_pose.InterpolatePoseAlpha(summary.frame.end_pose, 0.5,
+                                                                     summary.frame.begin_pose.dest_frame_id);
+                    else
+                        pose = summary.frame.end_pose;
+                    for (auto i = 0; i < summary.all_corrected_points.size(); ++i) {
+                        auto &point = summary.all_corrected_points[i];
+                        point.UndistortPoint() = pose.Inverse() * point.WorldPoint();
+                    }
+
+                    namespace fs = std::filesystem;
+                    fs::path outp((*output_path) / seq_name / "pcd" / (basenamewithoutext(frame.file_path) + ".ply"));
+                    std::error_code ec;
+                    fs::create_directories(outp.parent_path(), ec); // ignore errors silently
+                    WritePLY2(outp.string(), summary.all_corrected_points);
                 }
 
                 const int period = options.compute_metrics_period;
@@ -334,10 +368,12 @@ namespace ct_icp {
                     poses.push_back(frame.end_pose);
             }
 
-            std::string filepath = output_dir / (sequence_name + ".PLY");
-            slam::SavePosesAsPLY(filepath, poses);
+            fs::path filepath = output_dir / sequence_name / "scan_states_odom.txt";
+            std::error_code ec;
+            fs::create_directories(filepath.parent_path(), ec);
+            slam::SavePosesAsTum(filepath.string(), poses);
 
-            std::cout << std::endl << "Saving Trajectory to " << absolute(fs::path(filepath)).string() << std::endl;
+            std::cout << std::endl << "Saving Trajectory to " << absolute(filepath).string() << std::endl;
         }
 
         // --- Compute Metrics
@@ -384,6 +420,7 @@ namespace ct_icp {
         FIND_OPTION(config, (*this), use_outdoor_evaluation, int)
         FIND_OPTION(config, (*this), save_mid_frame, int)
         FIND_OPTION(config, (*this), output_dir, std::string)
+        FIND_OPTION(config, (*this), save_undistort_frames, bool)
     }
 
 } // namespace ct_icp

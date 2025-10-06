@@ -49,6 +49,7 @@ namespace ct_icp {
             bool save_mid_frame = true; //< Whether to Save the mid frame of the trajectory or the begin and end pose of each frame
             bool use_outdoor_evaluation = true; //< Whether to use KITTI's segment size for the evaluation of the odometry
             std::string output_dir = "";
+            bool save_undistort_frames = false;
 
             // ----------- Load Config
 

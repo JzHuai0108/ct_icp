@@ -5,6 +5,7 @@ debug_information: true # Whether to display debug information (incompatible wit
 output_results: true # Whether to output results to disk
 exit_early: true # Whether to exit early upon a detected failure
 output_dir: .outputs
+save_undistort_frames: false
 
 # ---- DATASET OPTIONS ----
 dataset_options:

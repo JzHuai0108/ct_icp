@@ -307,7 +307,7 @@ void InitializeNode(ros::NodeHandle &public_nh, ros::NodeHandle &nh) {
                 auto odometry_node = node["odometry_options"];
                 options = ct_icp::yaml_to_odometry_options(odometry_node);
 
-                ROS_ERROR_STREAM("debug print: " << options.debug_print << ", ct_icp print: "
+                ROS_INFO_STREAM("debug print: " << options.debug_print << ", ct_icp print: "
                                                  << options.ct_icp_options.debug_print);
                 config.odometry_options = options;
             }

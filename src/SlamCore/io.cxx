@@ -356,6 +356,33 @@ namespace slam {
         output_stream.close();
     }
 
+    // Writes: dest_time x y z qx qy qz qw ref_time
+    void SavePosesAsTum(std::ostream& os, const std::vector<Pose>& poses) {
+        // Common TUM precision (ns-level timestamps & stable pose decimals)
+        os.setf(std::ios::fixed);
+        os << std::setprecision(9);
+
+        for (const auto& p : poses) {
+            const auto& t = p.pose.tr;     // assume Eigen::Vector3d or similar
+            const auto& q = p.pose.quat;   // assume Eigen::Quaterniond
+
+            // Note: Eigen quaternions expose x(), y(), z(), w() in (vector, scalar) order.
+            os << p.dest_timestamp << ' '
+            << t[0] << ' ' << t[1] << ' ' << t[2] << ' '
+            << q.x() << ' ' << q.y() << ' ' << q.z() << ' ' << q.w() << ' '
+            << p.ref_timestamp << '\n';
+        }
+    }
+
+    void SavePosesAsTum(const std::string& output_file_path, const std::vector<Pose>& poses) {
+        std::ofstream ofs(output_file_path);
+        if (!ofs) {
+            throw std::runtime_error("SavePosesAsTum: failed to open file: " + output_file_path);
+        }
+        SavePosesAsTum(ofs, poses);
+        ofs.close();
+    }
+
     /* -------------------------------------------------------------------------------------------------------------- */
     std::vector<slam::Pose> ReadPosesFromPLY(std::istream &stream) {
         std::vector<slam::Pose> poses;
@@ -737,6 +764,14 @@ namespace slam {
     void WritePLY(std::ostream &output_file, const std::vector<slam::WPoint3D> &points) {
         std::string xyz_element = "world_point";
         auto pc = slam::PointCloud::WrapConstVector(points, slam::WPoint3D::DefaultSchema(), xyz_element);
+
+        std::vector<slam::ItemSchema> schemas(1);
+        schemas[0] = pc.GetCollection().GetItemInfo(0).item_schema;
+        WritePLY(output_file, pc, slam::PLYSchemaMapper::BuildDefaultFromSchema(schemas));
+    }
+
+    void WritePLY2(const std::string &output_file, const std::vector<slam::WPoint3D> &points, const std::string& element) {
+        auto pc = slam::PointCloud::WrapConstVector(points, slam::WPoint3D::DefaultSchema(), element);
 
         std::vector<slam::ItemSchema> schemas(1);
         schemas[0] = pc.GetCollection().GetItemInfo(0).item_schema;
