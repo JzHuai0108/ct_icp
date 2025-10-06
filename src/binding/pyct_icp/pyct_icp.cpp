@@ -188,55 +188,99 @@ private:
     }
 };
 
-// struct PyLiDARPoint {
-//     double raw_point[3];
-//     double pt[3];
-//     double alpha_timestamp;
-//     double timestamp;
-//     int frame_index;
-// };
-//
-//
-///// A Wrapper for an array of ct_icp Points
-///// Allows access to ct_icp::Point3D from python using numpy's structured dtypes
-// struct LiDARFrame {
-//
-//     std::vector<ct_icp::Point3D> points;
-//
-//     void SetFrame(const py::array_t<PyLiDARPoint> &arr) {
-//         auto req = arr.request();
-//         auto size = arr.size();
-//         auto ptr = static_cast<ct_icp::Point3D *>(req.ptr);
-//
-//         points.resize(size);
-//         std::copy(ptr, ptr + size, points.begin());
-//     };
-//
-//     py::array_t<PyLiDARPoint> GetWrappingArray(py::handle handle = py::handle()) {
-//         py::buffer_info buffer_info(
-//                 static_cast<void *>(&points[0]),
-//                 sizeof(PyLiDARPoint),
-//                 py::format_descriptor<PyLiDARPoint>::format(),
-//                 1,
-//                 {points.size()},
-//                 {sizeof(PyLiDARPoint)});
-//
-//         py::array_t<PyLiDARPoint> array(buffer_info, handle);
-//         return array;
-//     }
-// };
-//
-////! Wraps a RegistrationSummary (in order to wrap the std::vector of points with a LiDARFrame)
-// struct PyRegistrationSummary : ct_icp::Odometry::RegistrationSummary {
-//
-//     explicit PyRegistrationSummary(ct_icp::Odometry::RegistrationSummary &&summary_)
-//             : ct_icp::Odometry::RegistrationSummary(std::move(summary_)) {
-//         lidar_points.points = std::move(corrected_points);
-//     }
-//
-//     LiDARFrame lidar_points;
-// };
-//
+
+// --- POD used only for NumPy I/O (no macro needed) ---
+struct PyLiDARPoint {
+    double raw_point[3];
+    double pt[3];
+    double alpha_timestamp;
+    double timestamp;
+    int    frame_index;
+};
+
+struct LiDARFrame {
+    // Eigen-aligned storage for WPoint3D
+    std::vector<ct_icp::WPoint3D, Eigen::aligned_allocator<ct_icp::WPoint3D>> points;
+
+    // Accept *any* structured array as long as itemsize matches our POD
+    void SetFrame(const py::array &arr) {
+        if (arr.ndim() != 1)
+            throw std::runtime_error("LiDARFrame.SetFrame expects a 1D structured array");
+        if (static_cast<size_t>(arr.itemsize()) != sizeof(PyLiDARPoint))
+            throw std::runtime_error("Unexpected itemsize for PyLiDARPoint");
+
+        const auto *src = static_cast<const PyLiDARPoint*>(arr.data());
+        const size_t n  = static_cast<size_t>(arr.shape(0));
+
+        points.resize(n);
+        for (size_t i = 0; i < n; ++i) {
+            const auto &p = src[i];
+            auto &w = points[i];
+
+            w.raw_point.point = Eigen::Vector3d(p.raw_point[0], p.raw_point[1], p.raw_point[2]);
+            w.raw_point.timestamp = p.timestamp;
+
+            w.world_point = Eigen::Vector3d(p.pt[0], p.pt[1], p.pt[2]);
+            w.undistort_point = w.world_point;           // init as world_point
+            w.index_frame = p.frame_index;
+        }
+    }
+
+    // Return a structured np.array with our layout (no dtype macro)
+    py::array GetWrappingArray(py::handle = py::handle()) const {
+        // Prepare an owning buffer of PODs
+        auto *buf = new std::vector<PyLiDARPoint>();
+        buf->resize(points.size());
+
+        for (size_t i = 0; i < points.size(); ++i) {
+            const auto &w = points[i];
+            PyLiDARPoint q{};
+            q.raw_point[0] = w.raw_point.point.x();
+            q.raw_point[1] = w.raw_point.point.y();
+            q.raw_point[2] = w.raw_point.point.z();
+            q.timestamp    = w.raw_point.timestamp;
+
+            q.pt[0] = w.world_point.x();
+            q.pt[1] = w.world_point.y();
+            q.pt[2] = w.world_point.z();
+
+            q.alpha_timestamp = 0.0;                     // set if you have a value
+            q.frame_index     = static_cast<int>(w.index_frame);
+            (*buf)[i] = q;
+        }
+
+        auto capsule = py::capsule(buf, [](void *v){
+            delete reinterpret_cast<std::vector<PyLiDARPoint>*>(v);
+        });
+
+        // Build NumPy dtype: [('raw_point', ('<f8',(3,))), ('pt',('<f8',(3,))),
+        //                     ('alpha_timestamp','<f8'), ('timestamp','<f8'), ('frame_index','<i4')]
+        py::module np = py::module::import("numpy");
+        py::object dtype_obj = np.attr("dtype")(
+            py::make_tuple(
+                py::make_tuple("raw_point", py::make_tuple("<f8", py::make_tuple(3))),
+                py::make_tuple("pt",        py::make_tuple("<f8", py::make_tuple(3))),
+                py::make_tuple("alpha_timestamp", "<f8"),
+                py::make_tuple("timestamp", "<f8"),
+                py::make_tuple("frame_index", "<i4")
+            )
+        );
+
+        // Convert to py::dtype (this is the key fix)
+        py::dtype dt = py::reinterpret_borrow<py::dtype>(dtype_obj);
+
+        // Construct the array using containers for shape/strides
+        return py::array(
+            dt,
+            py::array::ShapeContainer{ buf->size() },
+            py::array::StridesContainer{ static_cast<py::ssize_t>(sizeof(PyLiDARPoint)) },
+            buf->data(),
+            capsule
+        );
+
+    }
+};
+
 #define STRUCT_READWRITE(_struct, argument) .def_readwrite(#argument, &_struct ::argument)
 #define ADD_VALUE(_enum, _value) .value(#_value, _enum ::_value)
 
@@ -349,6 +393,11 @@ PYBIND11_MODULE(pyct_icp, m)
     m.def("AngularDistanceMat",
           [](const Eigen::Matrix3d &lhs, const Eigen::Matrix3d &rhs)
           { return slam::AngularDistance(lhs, rhs); });
+
+    py::class_<LiDARFrame>(m, "LiDARFrame")
+        .def(py::init<>())
+        .def("set_frame", &LiDARFrame::SetFrame)
+        .def("get_wrapping_array", &LiDARFrame::GetWrappingArray);
 
     py::class_<slam::Pose>(m, "Pose")
         .def(py::init())
@@ -714,6 +763,120 @@ PYBIND11_MODULE(pyct_icp, m)
         YAML::Node node = YAML::LoadFile(yaml_file);
         return ct_icp::yaml_to_ct_icp_options(node); });
 
+    // Abstract bases: no .def(py::init<>())
+    py::class_<ct_icp::ANeighborhoodStrategy,
+            std::shared_ptr<ct_icp::ANeighborhoodStrategy>>(m, "ANeighborhoodStrategy");
+
+    // ------------------------------------------------------------------
+    // Base options: INeighborStrategyOptions (polymorphic; has virtual dtor)
+    // Expose simple fields & string type; do NOT bind FromYAML here (C++ side).
+    // ------------------------------------------------------------------
+    py::class_<ct_icp::INeighborStrategyOptions,
+                std::shared_ptr<ct_icp::INeighborStrategyOptions>>(m, "INeighborStrategyOptions")
+        .def_readwrite("max_num_neighbors", &ct_icp::INeighborStrategyOptions::max_num_neighbors)
+        .def_readwrite("min_num_neighbors", &ct_icp::INeighborStrategyOptions::min_num_neighbors)
+        .def("get_type", &ct_icp::INeighborStrategyOptions::GetType)
+        // Factory: returns shared_ptr<ANeighborhoodStrategy>
+        .def("make_strategy",
+            &ct_icp::INeighborStrategyOptions::MakeStrategyFromOptions,
+            "Construct the concrete strategy from these options");
+
+    py::class_<ct_icp::DefaultNearestNeighborStrategy::Options,
+            ct_icp::INeighborStrategyOptions,
+            std::shared_ptr<ct_icp::DefaultNearestNeighborStrategy::Options>>(m, "DefaultNNOptions")
+        .def(py::init<>())
+        .def_static("type", &ct_icp::DefaultNearestNeighborStrategy::Options::Type);
+
+    py::class_<ct_icp::DefaultNearestNeighborStrategy,
+            ct_icp::ANeighborhoodStrategy,
+            std::shared_ptr<ct_icp::DefaultNearestNeighborStrategy>>(m, "DefaultNearestNeighborStrategy")
+        .def(py::init<>())
+        .def(py::init<const ct_icp::DefaultNearestNeighborStrategy::Options&>());
+
+    py::class_<ct_icp::DistanceBasedStrategy::Options,
+            ct_icp::INeighborStrategyOptions,
+            std::shared_ptr<ct_icp::DistanceBasedStrategy::Options>>(m, "DistanceBasedOptions")
+        .def(py::init<>())
+        .def_readwrite("distance_max", &ct_icp::DistanceBasedStrategy::Options::distance_max)
+        .def_readwrite("radius_min",   &ct_icp::DistanceBasedStrategy::Options::radius_min)
+        .def_readwrite("radius_max",   &ct_icp::DistanceBasedStrategy::Options::radius_max)
+        .def_readwrite("exponent",     &ct_icp::DistanceBasedStrategy::Options::exponent)
+        .def_static("type", &ct_icp::DistanceBasedStrategy::Options::Type);
+
+    py::class_<ct_icp::DistanceBasedStrategy,
+            ct_icp::ANeighborhoodStrategy,
+            std::shared_ptr<ct_icp::DistanceBasedStrategy>>(m, "DistanceBasedStrategy")
+        .def(py::init<const ct_icp::DistanceBasedStrategy::Options&>());
+
+    // ------------------------------------------------------------------
+    // Abstract base — register type only (NO constructor)
+    // ------------------------------------------------------------------
+    py::class_<ct_icp::AMotionModel,
+                std::shared_ptr<ct_icp::AMotionModel>>(m, "AMotionModel");
+
+    // ------------------------------------------------------------------
+    // PreviousFrameMotionModel enums & Options
+    // ------------------------------------------------------------------
+    // Enum for model type
+    py::enum_<ct_icp::PreviousFrameMotionModel::MODEL_TYPE>(m, "PreviousFrameMMType")
+        .value("CONSTANT_VELOCITY", ct_icp::PreviousFrameMotionModel::MODEL_TYPE::CONSTANT_VELOCITY)
+        .value("SMALL_VELOCITY",    ct_icp::PreviousFrameMotionModel::MODEL_TYPE::SMALL_VELOCITY);
+
+    // Options struct (this is what OdometryOptions returns)
+    py::class_<ct_icp::PreviousFrameMotionModel::Options,
+                std::shared_ptr<ct_icp::PreviousFrameMotionModel::Options>>(m, "PreviousFrameMMOptions")
+        .def(py::init<>())
+        .def_readwrite("model",                        &ct_icp::PreviousFrameMotionModel::Options::model)
+        .def_readwrite("beta_location_consistency",    &ct_icp::PreviousFrameMotionModel::Options::beta_location_consistency)
+        .def_readwrite("beta_constant_velocity",       &ct_icp::PreviousFrameMotionModel::Options::beta_constant_velocity)
+        .def_readwrite("beta_small_velocity",          &ct_icp::PreviousFrameMotionModel::Options::beta_small_velocity)
+        .def_readwrite("beta_orientation_consistency", &ct_icp::PreviousFrameMotionModel::Options::beta_orientation_consistency)
+        .def_readwrite("threshold_orientation_deg",    &ct_icp::PreviousFrameMotionModel::Options::threshold_orientation_deg)
+        .def_readwrite("threshold_translation_diff",   &ct_icp::PreviousFrameMotionModel::Options::threshold_translation_diff)
+        .def_readwrite("log_if_invalid",               &ct_icp::PreviousFrameMotionModel::Options::log_if_invalid);
+
+    // (Optional) the concrete class — no methods bound; constructor not required
+    py::class_<ct_icp::PreviousFrameMotionModel,
+                ct_icp::AMotionModel,
+                std::shared_ptr<ct_icp::PreviousFrameMotionModel>>(m, "PreviousFrameMotionModel")
+        .def(py::init<>())  // only if default ctor exists; otherwise remove this line
+        // If you later add a ctor taking Options:
+        // .def(py::init<const ct_icp::PreviousFrameMotionModel::Options&>())
+        ;
+
+    // ------------------------------------------------------------------
+    // PredictionConsistencyModel enums & Options
+    // ------------------------------------------------------------------
+    py::enum_<ct_icp::PredictionConsistencyModel::CONSTRAINT_TYPE>(m, "PredictionConsistencyConstraint")
+        .value("NONE",                        ct_icp::PredictionConsistencyModel::CONSTRAINT_TYPE::NONE)
+        .value("CONSTRAINT_ON_BEGIN",         ct_icp::PredictionConsistencyModel::CONSTRAINT_TYPE::CONSTRAINT_ON_BEGIN)
+        .value("CONSTRAINT_ON_END",           ct_icp::PredictionConsistencyModel::CONSTRAINT_TYPE::CONSTRAINT_ON_END)
+        .value("RELATIVE_TRANSFORM_CONSTRAINT", ct_icp::PredictionConsistencyModel::CONSTRAINT_TYPE::RELATIVE_TRANSFORM_CONSTRAINT)
+        .value("ALL",                         ct_icp::PredictionConsistencyModel::CONSTRAINT_TYPE::ALL);
+
+    py::class_<ct_icp::PredictionConsistencyModel::Options,
+                std::shared_ptr<ct_icp::PredictionConsistencyModel::Options>>(m, "PredictionConsistencyOptions")
+        .def(py::init<>())
+        .def_readwrite("model",                          &ct_icp::PredictionConsistencyModel::Options::model)
+        .def_readwrite("alpha_begin_tr_constraint",      &ct_icp::PredictionConsistencyModel::Options::alpha_begin_tr_constraint)
+        .def_readwrite("alpha_end_tr_constraint",        &ct_icp::PredictionConsistencyModel::Options::alpha_end_tr_constraint)
+        .def_readwrite("alpha_begin_rot_constraint",     &ct_icp::PredictionConsistencyModel::Options::alpha_begin_rot_constraint)
+        .def_readwrite("alpha_end_rot_constraint",       &ct_icp::PredictionConsistencyModel::Options::alpha_end_rot_constraint)
+        .def_readwrite("alpha_relative_rot_constraint",  &ct_icp::PredictionConsistencyModel::Options::alpha_relative_rot_constraint)
+        .def_readwrite("alpha_relative_tr_constraint",   &ct_icp::PredictionConsistencyModel::Options::alpha_relative_tr_constraint)
+        .def_readwrite("beta_scale_rot_deg",             &ct_icp::PredictionConsistencyModel::Options::beta_scale_rot_deg)
+        .def_readwrite("beta_scale_tr_m",                &ct_icp::PredictionConsistencyModel::Options::beta_scale_tr_m)
+        .def_readwrite("threshold_rot_deg",              &ct_icp::PredictionConsistencyModel::Options::threshold_rot_deg)
+        .def_readwrite("threshold_tr_m",                 &ct_icp::PredictionConsistencyModel::Options::threshold_tr_m)
+        .def_readwrite("log_if_invalid",                 &ct_icp::PredictionConsistencyModel::Options::log_if_invalid);
+
+    py::class_<ct_icp::PredictionConsistencyModel,
+                ct_icp::AMotionModel,
+                std::shared_ptr<ct_icp::PredictionConsistencyModel>>(m, "PredictionConsistencyModel")
+        .def(py::init<>())  // only if default ctor exists
+        // .def(py::init<const ct_icp::PredictionConsistencyModel::Options&>()) // if you add such ctor
+        ;
+
     py::class_<ct_icp::TrajectoryFrame>(m, "TrajectoryFrame")
         .def(py::init())
         .def_readwrite("begin_pose", &ct_icp::TrajectoryFrame::begin_pose)
@@ -784,6 +947,7 @@ PYBIND11_MODULE(pyct_icp, m)
         .def(py::init())
         .def_static("DefaultDrivingProfile", ct_icp::OdometryOptions::DefaultDrivingProfile)
         .def_static("DefaultRobustOutdoorLowInertia", ct_icp::OdometryOptions::DefaultRobustOutdoorLowInertia)
+        .def_static("RobustDrivingProfile", ct_icp::OdometryOptions::RobustDrivingProfile)
             STRUCT_READWRITE(ct_icp::OdometryOptions, ct_icp_options)
                 STRUCT_READWRITE(ct_icp::OdometryOptions, motion_compensation)
                     STRUCT_READWRITE(ct_icp::OdometryOptions, initialization)
