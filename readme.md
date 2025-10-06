@@ -55,8 +55,8 @@ Superbuild**](https://gitlab.kitware.com/keu-computervision/MappingResearchKEU/S
 
 ```bash
 mkdir .cmake-build-superbuild && cd .cmake-build-superbuild     #< Creates the cmake folder
-cmake ../superbuild -DWITH_ROS=ON                                            #< (1) Configure step 
-cmake --build . --config Release -DWITH_ROS=ON                               #< Build step (Downloads and install the dependencies), add -DWITH_VIZ3D=ON to install with the GUI
+cmake ../superbuild -DWITH_ROS=ON                               #< (1) Configure step 
+cmake --build . --config Release                                #< Build step (Downloads and install the dependencies), add -DWITH_VIZ3D=ON to install with the GUI
 ```
 > /!\ If you want to build the visualization do not forget to add `-DWITH_VIZ3D=ON`
 
@@ -66,10 +66,12 @@ cmake --build . --config Release -DWITH_ROS=ON                               #< 
 
 ### Step 2: Build and install CT-ICP library
 
+Activate the conda env say cticp for ct-icp and pylidar-slam from here if to use python bindings.
+
 ```bash
 # Inside the ct_icp directory
 mkdir cmake-build-release && cd  cmake-build-release                  #< Create the build directory
-cmake .. -DCMAKE_BUILD_TYPE=Release                                   #< (2) Configure with the desired options (specify arguments with -D<arg_name>=<arg_value>), add -DWITH_VIZ3D=ON to install with the GUI
+cmake .. -DCMAKE_BUILD_TYPE=Release -DWITH_PYTHON_BINDING=ON          #< (2) Configure with the desired options (specify arguments with -D<arg_name>=<arg_value>), add -DWITH_VIZ3D=ON to install with the GUI
 cmake --build . --target install --config Release --parallel 12       #< Build and Install the project
 ```
 
@@ -89,9 +91,15 @@ cmake --build . --target install --config Release --parallel 12       #< Build a
 - 3. Verify that the python binding library has been installed. Its location should be something like `<build_dir>/src/binding/pyct_icp/pyct_icp.cpython-38-x86_64-linux-gnu.so`
 
 - 4.  Install locally the python package:
+
 ```bash
 cd <build_dir>/src/binding                  # Go to the parent folder of setup.py
 pip uninstall -y pyct_icp && pip install .  # Install locally the library
+```
+
+To run run_slam.py, you may need to install the python dependencies in the conda env cticp, eg.
+```
+pip install rich
 ```
 
 > An example script using the binding is located at `python/run_slam.py`. It launches CT-ICP on a dataset specified from the command line. The output of running `python python/run_slam.py -h` should be : 
