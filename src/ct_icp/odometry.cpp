@@ -619,14 +619,15 @@ namespace ct_icp {
 
         if (summary.relative_distance > options_.distance_error_threshold) {
             if (log_stream != nullptr)
-                *log_stream << "Error in ego-motion distance !" << std::endl;
+                *log_stream << "Error in ego-motion distance: " << summary.relative_distance << std::endl;
             return false;
         }
 
         if (summary.relative_orientation > options_.orientation_error_threshold ||
             summary.ego_orientation > options_.orientation_error_threshold) {
             if (log_stream != nullptr)
-                *log_stream << "Error in ego-motion distance !" << std::endl;
+                *log_stream << "Error in ego-motion orientation: " << summary.relative_orientation
+                            << " ego " << summary.ego_orientation << std::endl;
             return false;
         }
 

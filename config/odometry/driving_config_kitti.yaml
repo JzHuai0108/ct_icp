@@ -4,16 +4,25 @@ progress_bar: true # Whether to display progress with a progress bar
 debug_information: false # Whether to display debug information (incompatible with progress_bar)
 output_results: true # Whether to output results to disk
 exit_early: true # Whether to exit early upon a detected failure
-output_dir: /media/jhuai/OneTouchBlss/jhuai/results/kitti/ct-icp
+output_dir: /media/jhuai/BackupPlus/jhuai/kitti_results/ct-icp
 save_undistort_frames: false
 
 # ---- DATASET OPTIONS ----
+# we failed to process seq 12 even after enlarging the error thresholds.
 dataset_options:
   - dataset: KITTI
     root_path: /media/jhuai/OneTouchBlss/jhuai/data/KITTI
-    use_all_datasets: true
+    use_all_datasets: false
     sequence_options:
-      - sequence_name: 00
+      - sequence_name: 13
+      - sequence_name: 14
+      - sequence_name: 15
+      - sequence_name: 16
+      - sequence_name: 17
+      - sequence_name: 18
+      - sequence_name: 19
+      - sequence_name: 20
+      - sequence_name: 21
 
 # ---- ODOMETRY OPTIONS ----
 odometry_options:
@@ -30,7 +39,8 @@ odometry_options:
   # -- Frame Options
   voxel_size: 0.5 # The voxel size for the grid sampling of the new frame (before keypoints extraction)
   max_distance: 100.0 # The threshold of the distance to suppress voxels from the map
-  distance_error_threshold: 5.0 # The motion of the sensor between two frames which is considered erroneous (stops the odometry)
+  distance_error_threshold: 20.0 # The motion of the sensor between two frames which is considered erroneous (stops the odometry)
+  orientation_error_threshold: 120.0
 
   # -- Map Options
   neighborhood_strategy:
